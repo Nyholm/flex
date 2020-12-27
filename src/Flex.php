@@ -537,10 +537,12 @@ class Flex implements PluginInterface, EventSubscriberInterface
                     continue;
                 }
                 if ('a' === $answer) {
-                    $installContribs = true;
+                    $installSelfHosted = $recipe->isSelfHosted() ? true : $installSelfHosted;
+                    $installContribs = $recipe->isContrib() ? true : $installContribs;
                 }
                 if ('p' === $answer) {
-                    $installContribs = true;
+                    $installSelfHosted = $recipe->isSelfHosted() ? true : $installSelfHosted;
+                    $installContribs = $recipe->isContrib() ? true : $installContribs;
                     $json = new JsonFile(Factory::getComposerFile());
                     $manipulator = new JsonManipulator(file_get_contents($json->getPath()));
                     $manipulator->addSubNode('extra', $recipe->isSelfHosted() ? 'symfony.allow-self-hosted' : 'symfony.allow-contrib', true);
