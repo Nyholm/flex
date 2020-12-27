@@ -15,11 +15,13 @@ use Composer\Composer;
 use Composer\Config;
 use Composer\DependencyResolver\Operation\InstallOperation;
 use Composer\Factory;
+use Composer\Installer\InstallationManager;
 use Composer\Installer\PackageEvent;
 use Composer\IO\BufferIO;
 use Composer\Package\Link;
 use Composer\Package\Locker;
 use Composer\Package\Package;
+use Composer\Package\PackageInterface;
 use Composer\Package\RootPackageInterface;
 use Composer\Plugin\PluginInterface;
 use Composer\Repository\RepositoryManager;
@@ -228,6 +230,44 @@ EOF
         ];
     }
 
+    public function testBundlesSelfHostedPackage()
+    {
+        $io = new BufferIO('', OutputInterface::VERBOSITY_VERBOSE);
+
+        $package = new Package('nyholm/random-library', '1.0', '1.0');
+        $package->setAutoload(['psr-4' => ['Nyholm\\RandomLib\\' => 'src/']]);
+        $package->setSourceUrl('https://github.com/nyholm/random-lib.git');
+        $package->setDistReference('abc1234');
+        $manifest = [
+            'copy-from-package' => ['.symfony/config/' => '%CONFIG_DIR%/packages/'],
+            'env' => ['APP_TRUE' => 'true'],
+            'gitignore' => ['/random/'],
+        ];
+
+        $expectedRecipe = new Recipe($package, $package->getName(), 'install', [
+            'is_contrib' => false,
+            'is_self_hosted' => true,
+            'package' => 'nyholm/random-library',
+            'version' => '1.0',
+            'origin' => 'nyholm/random-library:1.0@github.com/nyholm/random-lib:abc1234',
+            'manifest' => $manifest,
+        ]);
+
+        $installPath = $this->getPackageInstallPath($package);
+        $recipeDirectory = $installPath . DIRECTORY_SEPARATOR . '.symfony';
+        @mkdir($recipeDirectory, 0777, true);
+        try {
+            file_put_contents($recipeDirectory . DIRECTORY_SEPARATOR . 'manifest.json', json_encode($manifest));
+
+            $rootPackage = $this->mockRootPackage(['symfony' => ['allow-self-hosted' => true]]);
+            $flex = $this->mockFlex($io, $rootPackage, $expectedRecipe, [], []);
+            $flex->record($this->mockPackageEvent($package));
+            $flex->install($this->mockFlexEvent());
+        } finally {
+            @rmdir($recipeDirectory);
+        }
+    }
+
     private function mockPackageEvent(Package $package): PackageEvent
     {
         $event = $this->getMockBuilder(PackageEvent::class, ['getOperation'])->disableOriginalConstructor()->getMock();
@@ -278,6 +318,15 @@ EOF
         $composer->setConfig($config);
         $composer->setLocker($locker);
         $composer->setPackage($package);
+
+        $installationManager = $this->getMockBuilder(InstallationManager::class)
+            ->disableOriginalConstructor()
+            ->onlyMethods(['getInstallPath'])
+            ->getMock();
+        $installationManager->method('getInstallPath')->willReturnCallback(function (PackageInterface $package) {
+            return $this->getPackageInstallPath($package);
+        });
+        $composer->setInstallationManager($installationManager);
 
         return $composer;
     }
@@ -335,5 +384,10 @@ EOF
 
             return $flex;
         }, null, Flex::class)->__invoke();
+    }
+
+    private function getPackageInstallPath(PackageInterface $package): string
+    {
+        return sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'flex-test' . DIRECTORY_SEPARATOR . sha1($package->getName());
     }
 }

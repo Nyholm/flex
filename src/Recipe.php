@@ -79,12 +79,21 @@ class Recipe
             return '';
         }
 
+        if ($this->isSelfHosted()) {
+            return sprintf('https://%s/tree/%s/.symfony', $matches[3], $matches[4]);
+        }
+
         return sprintf('https://%s/tree/%s/%s/%s', $matches[3], $matches[4], $matches[1], $matches[2]);
     }
 
     public function isContrib(): bool
     {
         return $this->data['is_contrib'] ?? false;
+    }
+
+    public function isSelfHosted(): bool
+    {
+        return $this->data['is_self_hosted'] ?? false;
     }
 
     public function getRef()

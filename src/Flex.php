@@ -496,12 +496,19 @@ class Flex implements PluginInterface, EventSubscriberInterface
 
         $this->io->writeError(sprintf('<info>Symfony operations: %d recipe%s (%s)</>', \count($recipes), \count($recipes) > 1 ? 's' : '', $this->downloader->getSessionId()));
         $installContribs = $this->composer->getPackage()->getExtra()['symfony']['allow-contrib'] ?? false;
+        $installSelfHosted = $this->composer->getPackage()->getExtra()['symfony']['allow-self-hosted'] ?? false;
         $manifest = null;
         foreach ($recipes as $recipe) {
-            if ('install' === $recipe->getJob() && !$installContribs && $recipe->isContrib()) {
+            if ('install' === $recipe->getJob() && ((!$installContribs && $recipe->isContrib()) || (!$installSelfHosted && $recipe->isSelfHosted()))) {
                 $warning = $this->io->isInteractive() ? 'WARNING' : 'IGNORING';
                 $this->io->writeError(sprintf('  - <warning> %s </> %s', $warning, $this->formatOrigin($recipe->getOrigin())));
-                $question = sprintf('    The recipe for this package comes from the "contrib" repository, which is open to community contributions.
+                if ($recipe->isSelfHosted()) {
+                    $question = '    The recipe for this package is located in the package repository itself, it may not have been subject for any quality reviews.';
+                } else {
+                    // Contrib:
+                    $question = '    The recipe for this package comes from the "contrib" repository, which is open to community contributions.';
+                }
+                $question = $question.sprintf('
     Review the recipe at %s
 
     Do you want to execute this recipe?
@@ -536,7 +543,7 @@ class Flex implements PluginInterface, EventSubscriberInterface
                     $installContribs = true;
                     $json = new JsonFile(Factory::getComposerFile());
                     $manipulator = new JsonManipulator(file_get_contents($json->getPath()));
-                    $manipulator->addSubNode('extra', 'symfony.allow-contrib', true);
+                    $manipulator->addSubNode('extra', $recipe->isSelfHosted() ? 'symfony.allow-self-hosted' : 'symfony.allow-contrib', true);
                     file_put_contents($json->getPath(), $manipulator->getContents());
                     $this->shouldUpdateComposerLock = true;
                 }
@@ -847,6 +854,20 @@ EOPHP
 
             if (isset($manifests[$name])) {
                 $recipes[$name] = new Recipe($package, $name, $job, $manifests[$name], $locks[$name] ?? []);
+            } elseif (file_exists($manifestPath = $this->getSelfHostedManifestPath($package))) {
+                $manifest = json_decode(file_get_contents($manifestPath), true);
+                if (is_array($manifest)) {
+                    unset($manifest['copy-from-recipe']);
+                    $manifests[$name] = [
+                        'is_contrib' => false,
+                        'is_self_hosted' => true,
+                        'package' => $package->getName(),
+                        'version' => $package->getVersion(),
+                        'origin' => sprintf('%s:%s@%s:%s', $name, $package->getPrettyVersion(), preg_replace('@https://(.*).git@s', '$1', $package->getSourceUrl()), $package->getDistReference()),
+                        'manifest' => $manifest,
+                    ];
+                    $recipes[$name] = new Recipe($package, $name, $job, $manifests[$name], $locks[$name] ?? []);
+                }
             }
 
             $noRecipe = !isset($manifests[$name]) || (isset($manifests[$name]['not_installable']) && $manifests[$name]['not_installable']);
@@ -1022,5 +1043,10 @@ EOPHP
         }
 
         return $events;
+    }
+
+    private function getSelfHostedManifestPath(PackageInterface $package): string
+    {
+        return $this->composer->getInstallationManager()->getInstallPath($package) . DIRECTORY_SEPARATOR . '.symfony' . DIRECTORY_SEPARATOR . 'manifest.json';
     }
 }
