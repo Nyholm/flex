@@ -1047,6 +1047,11 @@ EOPHP
 
     private function getSelfHostedManifestPath(PackageInterface $package): string
     {
-        return $this->composer->getInstallationManager()->getInstallPath($package) . DIRECTORY_SEPARATOR . '.symfony' . DIRECTORY_SEPARATOR . 'manifest.json';
+        $path = '.symfony/manifest.json';
+        if (isset($package->getExtra()['symfony']['manifest-file'])) {
+            $path = ltrim($package->getExtra()['symfony']['manifest-file'], '/');
+        }
+
+        return $this->composer->getInstallationManager()->getInstallPath($package) . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $path);
     }
 }

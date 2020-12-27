@@ -80,7 +80,7 @@ class Recipe
         }
 
         if ($this->isSelfHosted()) {
-            return sprintf('https://%s/tree/%s/.symfony', $matches[3], $matches[4]);
+            return sprintf('https://%s/tree/%s', $matches[3], $matches[4]);
         }
 
         return sprintf('https://%s/tree/%s/%s/%s', $matches[3], $matches[4], $matches[1], $matches[2]);
